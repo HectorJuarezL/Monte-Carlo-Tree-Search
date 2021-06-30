@@ -16,8 +16,15 @@ class simple_agent():
                 else:
                     whites+=simple_agent.weights[l]
             suma = whites+blacks
-            values[i,0]=whites/suma
-            values[i,1]=blacks/suma
+            relacion = whites/suma
+            values[i,:]=[relacion,1-relacion]
+            #if relacion>0.5:
+            #    values[i,:]=[1,0]
+            #elif relacion<0.5:
+            #    values[i,:]=[0,1]
+            #else:
+            #    tmp = np.random.randint(2)
+            #    values[i,:]=[tmp,(tmp+1)%2]
         if not both_players:
             values = values[:,0] if board.turn else values[:,1]
         return moves,values
@@ -42,3 +49,16 @@ class simple_agent():
         'k':15,
         'K':15
     }
+
+    
+class random_agent():
+    def get_move_values(self,board,both_players=False):
+        moves=list(board.legal_moves)
+        values = np.random.rand(len(moves),1)
+        if both_players:
+            values = np.concatenate((values,1-values),axis=1)
+        return moves,values
+    def select_move(self,board):
+        moves,values=self.get_move_values(board)
+        index=np.argmax(values)
+        return moves[index]

@@ -4,17 +4,17 @@ import time
 
 class MCTSNode:
     def __init__(self, game_state, parent = None, move = None, value = [0.5,0.5], bot = None, isRoot = False ):
-        self.game_state = game_state
-        self.parent = parent
-        self.move = move
-        self.win_counts = np.zeros([2])
-        self.value=value
-        self.num_rollouts = 0
-        self.children = []
-        self.unvisited_moves,self.unvisited_values = bot.get_move_values(game_state,both_players=True)
-        if type(self.unvisited_values) is np.ndarray:
+        self.game_state = game_state #estado de juego
+        self.parent = parent #nodo padre
+        self.move = move #movimiento asociado al nodo
+        self.Q = np.zeros([2]) #valor de calidad del nodo
+        self.value=value #valor de la función de evaluación
+        self.N = 0 #Numero de veces visitado
+        self.children = [] #lista de nodos hijos
+        self.unvisited_moves,self.unvisited_values = bot.get_move_values(game_state,both_players=True) #movimientos no visitados con sus respectivos valores
+        if type(self.unvisited_values) is np.ndarray: #conversión de tipos de dato en caso de recibir variables de numpy
             self.unvisited_values = self.unvisited_values.tolist()
-        self.isRoot=isRoot
+        self.isRoot=isRoot #booleano para comprobar si es un nodo raiz
 
     def add_random_child(self,bot):
         index = np.random.randint(len(self.unvisited_moves))
@@ -27,9 +27,9 @@ class MCTSNode:
         self.children.append(new_node) #añade el nodo a su lista de hijos
         return new_node #retorna el nuevo nodo
 
-    def record_win(self, result):
-        self.win_counts += result
-        self.num_rollouts += 1
+    def update_q(self, result):
+        self.Q += result
+        self.N += 1
 
     def can_add_child(self): #comprueba si aun hay nodos por visitar
         return len(self.unvisited_moves) > 0
@@ -37,25 +37,28 @@ class MCTSNode:
     def is_terminal(self): #verifica si es un nodo terminal, es decir, el final de una partida
         return self.game_state.is_game_over()
 
-    def winning_frac(self, player): #obtiene el valor Q/N para el nodo dado
+    def Q_frac(self, player): #obtiene el valor Q/N para el nodo dado
         if player: #turno de las blancas
-            return float(self.win_counts[0]) / float(self.num_rollouts)
+            return float(self.Q[0]) / float(self.N)
         else: #turno de las negras
-            return float(self.win_counts[1]) / float(self.num_rollouts)
+            return float(self.Q[1]) / float(self.N)
 
 class MCTS:
-    def __init__(self, temperature=None,bot=None,game_state=None):
+    def __init__(self, temperature=None,bot=None,game_state=None,default_time=30):
         self.temperature = temperature
         self.bot = bot
         self.root = MCTSNode(game_state,bot=self.bot,isRoot=True)
+        self.default_time=default_time
 
-    def select_move(self, game_state,time_len=60):
+    def select_move(self, game_state,time_len=None):
         
         if self.root.game_state!=game_state:
             print('\nEl estado de juego no corresponde con el de la raiz del arbol, se recreó la raiz')
             self.root = MCTSNode(game_state,bot=self.bot,isRoot=True)
 
         root=self.root
+        if time_len is None:
+            time_len = self.default_time
         #print("\n")
         #i=0
         start=time.time()
@@ -76,12 +79,12 @@ class MCTS:
 
             #fase de retropropagación, donde se actualiza el valor de Q de los nodos padres hasta llegar al nodo raiz
             while node is not None:
-                node.record_win(winner)
+                node.update_q(winner)
                 node = node.parent
 
         #a continuación, se crea una lista de set donde se recupera la información de cada uno de los hijos del nodo raiz con sus respectivos valores Q y N
         scored_moves = [
-            (child.winning_frac(root.game_state.turn), child.move, child.num_rollouts)
+            (child.Q_frac(root.game_state.turn), child.move, child.N)
             for child in root.children
         ]
         scored_moves.sort(key=lambda x: x[0], reverse=True)
@@ -111,16 +114,15 @@ class MCTS:
             Selecciona un hijo usando la métrica UCT (Upper confidence bound for trees).
         """
         #Calcula N(v)
-        total_rollouts = sum(child.num_rollouts for child in node.children)
+        total_rollouts = sum(child.N for child in node.children)
         log_rollouts = np.log(total_rollouts)
 
         best_score = -1
         best_child = None
         #Calcula UTC(j)
         for child in node.children:
-            #win_percentage = child.winning_frac(root.game_state.turn)
-            win_percentage = child.winning_frac(node.game_state.turn)
-            exploration_factor = np.sqrt(log_rollouts / child.num_rollouts)
+            win_percentage = child.Q_frac(node.game_state.turn)
+            exploration_factor = np.sqrt(log_rollouts / child.N)
             uct_score = win_percentage + self.temperature * exploration_factor
             if uct_score > best_score:
                 best_score = uct_score
